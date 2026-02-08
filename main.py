@@ -10,7 +10,6 @@ print("=" * 50)
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
 if not TOKEN:
     print("❌ ОШИБКА: TELEGRAM_TOKEN не найден!")
-    print("Добавьте TELEGRAM_TOKEN в Variables на Railway")
     exit(1)
 
 print(f"✅ Токен получен: {TOKEN[:10]}...")
@@ -74,6 +73,9 @@ async def help_command(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text(help_text)
 
 async def add_pet(update: Update, context: CallbackContext) -> None:
+    print(f"📝 Команда add_pet вызвана пользователем {update.effective_user.id}")
+    print(f"📝 Аргументы: {context.args}")
+    
     if not context.args:
         await update.message.reply_text(
             "📝 Введите:\n"
@@ -85,6 +87,7 @@ async def add_pet(update: Update, context: CallbackContext) -> None:
     
     data_text = ' '.join(context.args)
     parts = data_text.split(';')
+    print(f"📝 Разделенные данные: {parts}")
     
     if len(parts) != 8:
         await update.message.reply_text("❌ Нужно 8 параметров через ;")
@@ -99,6 +102,8 @@ async def add_pet(update: Update, context: CallbackContext) -> None:
         weight = float(parts[5].strip())
         height = float(parts[6].strip())
         birthday = parts[7].strip()
+        
+        print(f"📝 Сохранение в БД: {pet_name}, {species}, {breed}")
         
         cursor.execute('''
         INSERT INTO pets (user_id, pet_name, species, breed, color, age, weight, height, birthday)
@@ -115,17 +120,22 @@ async def add_pet(update: Update, context: CallbackContext) -> None:
             birthday
         ))
         conn.commit()
+        print("✅ Данные сохранены в БД")
         
         response = f"✅ Питомец добавлен!\n\n🐾 {pet_name} ({species})\n🎖️ Порода: {breed}\n🎨 Окрас: {color}\n📅 Возраст: {age} лет\n⚖️ Вес: {weight} кг\n📏 Рост: {height} см\n🎂 День рождения: {birthday}"
         await update.message.reply_text(response)
         
-    except ValueError:
-        await update.message.reply_text("❌ Ошибка в данных!")
+    except ValueError as e:
+        print(f"❌ Ошибка в данных: {e}")
+        await update.message.reply_text("❌ Ошибка в данных! Проверьте числа.")
 
 async def my_pets(update: Update, context: CallbackContext) -> None:
     user_id = update.effective_user.id
+    print(f"📝 Поиск питомцев для пользователя {user_id}")
+    
     cursor.execute('SELECT * FROM pets WHERE user_id = ?', (user_id,))
     pets = cursor.fetchall()
+    print(f"📝 Найдено питомцев: {len(pets)}")
     
     if not pets:
         await update.message.reply_text("🐾 У вас нет питомцев")
@@ -139,6 +149,7 @@ async def my_pets(update: Update, context: CallbackContext) -> None:
 
 async def handle_text(update: Update, context: CallbackContext) -> None:
     text = update.message.text
+    print(f"📝 Текст от пользователя: {text}")
     
     if text == "🚀 Старт":
         await start(update, context)
@@ -168,8 +179,10 @@ async def handle_text(update: Update, context: CallbackContext) -> None:
 
 def main() -> None:
     try:
+        print("🤖 Создание приложения...")
         application = Application.builder().token(TOKEN).build()
         
+        print("📝 Регистрация команд...")
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("help", help_command))
         application.add_handler(CommandHandler("addpet", add_pet))
