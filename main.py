@@ -3,12 +3,20 @@ import os
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 
-print("🚀 PetGav Бот запускается...")
+print("=" * 50)
+print("🚀 PetGav Bot запускается...")
+print("=" * 50)
 
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
 if not TOKEN:
     print("❌ ОШИБКА: TELEGRAM_TOKEN не найден!")
+    print("Добавьте TELEGRAM_TOKEN в Variables на Railway")
     exit(1)
+
+print(f"✅ Токен получен: {TOKEN[:10]}...")
+
+if not os.path.exists('data'):
+    os.makedirs('data')
 
 conn = sqlite3.connect('data/pets.db', check_same_thread=False)
 cursor = conn.cursor()
@@ -159,17 +167,24 @@ async def handle_text(update: Update, context: CallbackContext) -> None:
         await send_welcome(update, context)
 
 def main() -> None:
-    application = Application.builder().token(TOKEN).build()
-    
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("addpet", add_pet))
-    application.add_handler(CommandHandler("mypets", my_pets))
-    
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    
-    print("✅ Бот запущен!")
-    application.run_polling()
+    try:
+        application = Application.builder().token(TOKEN).build()
+        
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(CommandHandler("addpet", add_pet))
+        application.add_handler(CommandHandler("mypets", my_pets))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+        
+        print("✅ Бот запущен и готов!")
+        print("⚡ Ожидаю сообщения...")
+        
+        application.run_polling()
+        
+    except Exception as e:
+        print(f"❌ ОШИБКА: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == '__main__':
     main()
