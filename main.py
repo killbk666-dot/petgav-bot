@@ -1,26 +1,11 @@
-import logging
 import sqlite3
 import os
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 
-print("=" * 50)
 print("🚀 PetGav Бот запускается...")
-print("=" * 50)
 
-TOKEN = os.environ.get('TELEGRAM_TOKEN')
-if not TOKEN:
-    print("❌ ОШИБКА: TELEGRAM_TOKEN не найден!")
-    exit(1)
-
-print(f"✅ Токен получен: {TOKEN[:10]}...")
-
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-
-logger = logging.getLogger(__name__)
+TOKEN = os.environ.get('TELEGRAM_TOKEN', 'ВАШ_ТОКЕН_БОТА')
 
 if not os.path.exists('data'):
     os.makedirs('data')
@@ -43,23 +28,51 @@ CREATE TABLE IF NOT EXISTS pets (
 )""")
 conn.commit()
 
-print("✅ База данных готова")
+async def send_welcome(update: Update, context: CallbackContext) -> None:
+    keyboard = [[KeyboardButton('🚀 Старт')]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
+    await update.message.reply_text(
+        "🐕🐈 Добро пожаловать в PetGav! 🐦🐢\n\n"
+        "Ваш личный паспорт для питомцев!\n\n"
+        "Нажмите кнопку **🚀 Старт** чтобы начать!",
+        reply_markup=reply_markup
+    )
 
 async def start(update: Update, context: CallbackContext) -> None:
-    keyboard = [[KeyboardButton('🐾 Животные')]]
+    keyboard = [
+        [KeyboardButton('🐾 Животные'), KeyboardButton('📋 Мои питомцы')],
+        [KeyboardButton('➕ Добавить питомца'), KeyboardButton('❓ Помощь')]
+    ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     await update.message.reply_text(
-        "🐕 Добро пожаловать в PetGav! 🐈\n\nХраните данные о ваших питомцах здесь!\n\nНажмите кнопку ниже или используйте команды:\n/addpet - Добавить питомца\n/mypets - Мои питомцы\n/help - Помощь",
+        "🚀 **PetGav - Паспорт для питомцев**\n\n"
+        "Выберите действие:",
         reply_markup=reply_markup
     )
 
 async def help_command(update: Update, context: CallbackContext) -> None:
-    help_text = "📚 Команды:\n/start - Главное меню\n/addpet - Добавить питомца\n/mypets - Посмотреть питомцев\n/help - Справка\n\n📝 Формат добавления:\n/addpet Имя;Вид;Порода;Окрас;Возраст;Вес;Рост;ДеньРождения\n\n🐾 Пример:\n/addpet Барсик;Кошка;Британская;Серый;3;4.5;25;15.05.2020"
+    help_text = """
+📚 **Команды:**
+/start - Главное меню
+/addpet - Добавить питомца
+/mypets - Мои питомцы
+
+📝 **Формат добавления:**
+/addpet Имя;Вид;Порода;Окрас;Возраст;Вес;Рост;ДеньРождения
+
+🐾 **Пример:**
+/addpet Барсик;Кошка;Британская;Серый;3;4.5;25;15.05.2020
+    """
     await update.message.reply_text(help_text)
 
 async def add_pet(update: Update, context: CallbackContext) -> None:
     if not context.args:
-        await update.message.reply_text("📝 Введите:\n/addpet Имя;Вид;Порода;Окрас;Возраст;Вес;Рост;День рождения\n\n📌 Пример:\n/addpet Барсик;Кошка;Британская;Серый;3;4.5;25;15.05.2020")
+        await update.message.reply_text(
+            "📝 Введите:\n"
+            "`/addpet Имя;Вид;Порода;Окрас;Возраст;Вес;Рост;День рождения`\n\n"
+            "Пример:\n"
+            "`/addpet Барсик;Кошка;Британская;Серый;3;4.5;25;15.05.2020`"
+        )
         return
     
     data_text = ' '.join(context.args)
@@ -119,45 +132,44 @@ async def my_pets(update: Update, context: CallbackContext) -> None:
 async def handle_text(update: Update, context: CallbackContext) -> None:
     text = update.message.text
     
-    if text == "🐾 Животные":
+    if text == "🚀 Старт":
+        await start(update, context)
+    
+    elif text == "🐾 Животные":
         keyboard = [
             [KeyboardButton("➕ Добавить питомца"), KeyboardButton("📋 Мои питомцы")],
-            [KeyboardButton("❓ Помощь")]
+            [KeyboardButton("❓ Помощь"), KeyboardButton("🚀 Старт")]
         ]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         await update.message.reply_text("🐾 Меню животных\n\nВыберите действие:", reply_markup=reply_markup)
     
-    elif text == "➕ Добавить питомца":
-        await update.message.reply_text("Используйте команду:\n/addpet Имя;Вид;Порода;Окрас;Возраст;Вес;Рост;День рождения")
-    
     elif text == "📋 Мои питомцы":
         await my_pets(update, context)
+    
+    elif text == "➕ Добавить питомца":
+        await update.message.reply_text(
+            "Используйте команду:\n"
+            "`/addpet Имя;Вид;Порода;Окрас;Возраст;Вес;Рост;День рождения`"
+        )
     
     elif text == "❓ Помощь":
         await help_command(update, context)
     
     else:
-        await start(update, context)
+        await send_welcome(update, context)
 
 def main() -> None:
-    try:
-        application = Application.builder().token(TOKEN).build()
-        
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("help", help_command))
-        application.add_handler(CommandHandler("addpet", add_pet))
-        application.add_handler(CommandHandler("mypets", my_pets))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-        
-        print("✅ Бот запущен и готов!")
-        print("⚡ Ожидаю сообщения...")
-        
-        application.run_polling()
-        
-    except Exception as e:
-        print(f"❌ ОШИБКА: {e}")
-        import traceback
-        traceback.print_exc()
+    application = Application.builder().token(TOKEN).build()
+    
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("addpet", add_pet))
+    application.add_handler(CommandHandler("mypets", my_pets))
+    
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    
+    print("✅ Бот запущен!")
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
