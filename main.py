@@ -5,10 +5,10 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 print("🚀 PetGav Бот запускается...")
 
-TOKEN = os.environ.get('TELEGRAM_TOKEN', 'ВАШ_ТОКЕН_БОТА')
-
-if not os.path.exists('data'):
-    os.makedirs('data')
+TOKEN = os.environ.get('TELEGRAM_TOKEN')
+if not TOKEN:
+    print("❌ ОШИБКА: TELEGRAM_TOKEN не найден!")
+    exit(1)
 
 conn = sqlite3.connect('data/pets.db', check_same_thread=False)
 cursor = conn.cursor()
