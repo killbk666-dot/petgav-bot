@@ -1,6 +1,6 @@
 import sqlite3
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 
@@ -14,10 +14,6 @@ if not TOKEN:
     exit(1)
 
 print(f"✅ Токен получен: {TOKEN[:10]}...")
-
-# ИИ функции ОТКЛЮЧЕНЫ для стабильной работы
-AI_ENABLED = False
-print("⚠️ ИИ функции отключены (для стабильной работы)")
 
 if not os.path.exists('data'):
     os.makedirs('data')
@@ -57,18 +53,6 @@ CREATE TABLE IF NOT EXISTS vaccinations (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )""")
 
-# Таблица для напоминаний
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS reminders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    reminder_text TEXT,
-    reminder_date DATE,
-    reminder_time TIME,
-    is_completed BOOLEAN DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)""")
-
 # Таблица для кормления
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS feeding (
@@ -87,16 +71,14 @@ conn.commit()
 def calculate_daily_food(weight, age, species, breed, gender, activity_level='normal'):
     """Расчет дневной нормы корма в граммах"""
     
-    # Базовые нормы (грамм на кг веса в день)
     if species.lower() in ['собака', 'пес', 'пёс']:
-        if age < 1:  # Щенок
+        if age < 1:
             base_per_kg = 40
-        elif age < 7:  # Взрослая
+        elif age < 7:
             base_per_kg = 30
-        else:  # Пожилая
+        else:
             base_per_kg = 25
             
-        # Поправка на породу
         breed_lower = breed.lower()
         if any(x in breed_lower for x in ['дог', 'мастиф', 'сенбернар', 'ньюфаундленд']):
             base_per_kg *= 0.8
@@ -113,13 +95,11 @@ def calculate_daily_food(weight, age, species, breed, gender, activity_level='no
     else:
         base_per_kg = 40
     
-    # Поправка на пол
     if gender.lower() in ['самец', 'кот', 'пес']:
         base_per_kg *= 1.1
     else:
         base_per_kg *= 0.95
     
-    # Поправка на активность
     activity_multipliers = {
         'низкая': 0.8, 'низкий': 0.8,
         'нормальная': 1.0, 'нормальный': 1.0,
@@ -140,22 +120,22 @@ async def main_menu(update: Update, context: CallbackContext) -> None:
 🐾 **PetGav - Ваш помощник для питомцев**
 ────────────────────
 
-**Полный контроль за здоровьем и уходом!**
+**Что умеет бот:**
+• Добавлять питомцев (пошагово)
+• Рассчитывать норму корма
+• Вести календарь прививок
+• Хранить все данные
 
-📋 **Основные команды:**
+📋 **Команды:**
 /pets - Мои питомцы
 /addpet - Добавить питомца
 /vaccines - Прививки
 /food - Питание
-/help - Помощь
-
-🎯 **Все данные в одном месте!**
 """
     
     keyboard = [
-        [KeyboardButton("🐕 Мои питомцы"), KeyboardButton("💉 Прививки")],
-        [KeyboardButton("🍽️ Питание"), KeyboardButton("➕ Добавить питомца")],
-        [KeyboardButton("❓ Помощь")]
+        [KeyboardButton("🐕 Мои питомцы"), KeyboardButton("➕ Добавить питомца")],
+        [KeyboardButton("💉 Прививки"), KeyboardButton("🍽️ Питание")]
     ]
     
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -164,22 +144,206 @@ async def main_menu(update: Update, context: CallbackContext) -> None:
 async def start(update: Update, context: CallbackContext) -> None:
     await main_menu(update, context)
 
-async def help_command(update: Update, context: CallbackContext) -> None:
-    help_text = """
-📚 **КОМАНДЫ БОТА:**
+# ========== ПОШАГОВОЕ ДОБАВЛЕНИЕ ПИТОМЦА ==========
 
-/pets - Мои питомцы
-/addpet - Добавить питомца
-/vaccines - Календарь прививок
-/food - Режим питания
+# Состояния для пошагового ввода
+PET_NAME, PET_SPECIES, PET_BREED, PET_GENDER, PET_COLOR, PET_AGE, PET_WEIGHT, PET_HEIGHT, PET_BIRTHDAY, PET_ACTIVITY = range(10)
 
-**Добавление питомца:**
-`Имя;Вид;Порода;Пол;Окрас;Возраст;Вес;Рост;ДД.ММ.ГГГГ;Активность`
+async def add_pet_start(update: Update, context: CallbackContext) -> None:
+    """Начинаем пошаговое добавление питомца"""
+    context.user_data['pet_step'] = PET_NAME
+    await update.message.reply_text(
+        "📝 **Добавление питомца** (шаг 1/10)\n\n"
+        "Введите **кличку** питомца:"
+    )
 
-**Прививки:**
-`Название;ДД.ММ.ГГГГ;ДД.ММ.ГГГГ;Заметки`
+async def add_pet_process(update: Update, context: CallbackContext) -> None:
+    """Обрабатываем каждый шаг ввода"""
+    
+    step = context.user_data.get('pet_step')
+    
+    if step is None:
+        return
+    
+    text = update.message.text.strip()
+    
+    # Шаг 1: Имя
+    if step == PET_NAME:
+        context.user_data['pet_name'] = text
+        context.user_data['pet_step'] = PET_SPECIES
+        await update.message.reply_text(
+            "✅ Кличка сохранена!\n\n"
+            "📝 **Шаг 2/10**\n"
+            "Введите **вид** животного (например: Собака, Кошка, Попугай):"
+        )
+    
+    # Шаг 2: Вид
+    elif step == PET_SPECIES:
+        context.user_data['pet_species'] = text
+        context.user_data['pet_step'] = PET_BREED
+        await update.message.reply_text(
+            "✅ Вид сохранен!\n\n"
+            "📝 **Шаг 3/10**\n"
+            "Введите **породу**:"
+        )
+    
+    # Шаг 3: Порода
+    elif step == PET_BREED:
+        context.user_data['pet_breed'] = text
+        context.user_data['pet_step'] = PET_GENDER
+        await update.message.reply_text(
+            "✅ Порода сохранена!\n\n"
+            "📝 **Шаг 4/10**\n"
+            "Введите **пол** (Кот/Кошка, Пес/Собака):"
+        )
+    
+    # Шаг 4: Пол
+    elif step == PET_GENDER:
+        context.user_data['pet_gender'] = text
+        context.user_data['pet_step'] = PET_COLOR
+        await update.message.reply_text(
+            "✅ Пол сохранен!\n\n"
+            "📝 **Шаг 5/10**\n"
+            "Введите **окрас**:"
+        )
+    
+    # Шаг 5: Окрас
+    elif step == PET_COLOR:
+        context.user_data['pet_color'] = text
+        context.user_data['pet_step'] = PET_AGE
+        await update.message.reply_text(
+            "✅ Окрас сохранен!\n\n"
+            "📝 **Шаг 6/10**\n"
+            "Введите **возраст** (в годах, только число):"
+        )
+    
+    # Шаг 6: Возраст
+    elif step == PET_AGE:
+        try:
+            age = int(text)
+            context.user_data['pet_age'] = age
+            context.user_data['pet_step'] = PET_WEIGHT
+            await update.message.reply_text(
+                "✅ Возраст сохранен!\n\n"
+                "📝 **Шаг 7/10**\n"
+                "Введите **вес** в кг (например: 4.5):"
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Пожалуйста, введите число (возраст в годах)")
+    
+    # Шаг 7: Вес
+    elif step == PET_WEIGHT:
+        try:
+            weight = float(text.replace(',', '.'))
+            context.user_data['pet_weight'] = weight
+            context.user_data['pet_step'] = PET_HEIGHT
+            await update.message.reply_text(
+                "✅ Вес сохранен!\n\n"
+                "📝 **Шаг 8/10**\n"
+                "Введите **рост** в см:"
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Пожалуйста, введите число (вес в кг)")
+    
+    # Шаг 8: Рост
+    elif step == PET_HEIGHT:
+        try:
+            height = float(text.replace(',', '.'))
+            context.user_data['pet_height'] = height
+            context.user_data['pet_step'] = PET_BIRTHDAY
+            await update.message.reply_text(
+                "✅ Рост сохранен!\n\n"
+                "📝 **Шаг 9/10**\n"
+                "Введите **дату рождения** в формате ДД.ММ.ГГГГ (например: 15.05.2020):"
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Пожалуйста, введите число (рост в см)")
+    
+    # Шаг 9: День рождения
+    elif step == PET_BIRTHDAY:
+        try:
+            # Проверяем формат даты
+            datetime.strptime(text, '%d.%m.%Y')
+            context.user_data['pet_birthday'] = text
+            context.user_data['pet_step'] = PET_ACTIVITY
+            await update.message.reply_text(
+                "✅ Дата рождения сохранена!\n\n"
+                "📝 **Шаг 10/10**\n"
+                "Введите **уровень активности** (низкая/нормальная/высокая/очень высокая):"
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат даты. Используйте ДД.ММ.ГГГГ")
+    
+    # Шаг 10: Активность и сохранение
+    elif step == PET_ACTIVITY:
+        activity = text.lower()
+        if activity not in ['низкая', 'нормальная', 'высокая', 'очень высокая']:
+            await update.message.reply_text("❌ Выберите из: низкая, нормальная, высокая, очень высокая")
+            return
+        
+        context.user_data['pet_activity'] = text
+        
+        # Сохраняем в базу данных
+        user_id = update.effective_user.id
+        pet_name = context.user_data['pet_name']
+        species = context.user_data['pet_species']
+        breed = context.user_data['pet_breed']
+        gender = context.user_data['pet_gender']
+        color = context.user_data['pet_color']
+        age = context.user_data['pet_age']
+        weight = context.user_data['pet_weight']
+        height = context.user_data['pet_height']
+        birthday = context.user_data['pet_birthday']
+        activity = context.user_data['pet_activity']
+        
+        cursor.execute('''
+        INSERT INTO pets (user_id, pet_name, species, breed, gender, color, age, weight, height, birthday, activity_level)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, pet_name, species, breed, gender, color, age, weight, height, birthday, activity))
+        
+        pet_id = cursor.lastrowid
+        
+        # Рассчитываем норму корма
+        daily_food = calculate_daily_food(weight, age, species, breed, gender, activity)
+        
+        cursor.execute('''
+        INSERT INTO feeding (user_id, pet_id, daily_amount)
+        VALUES (?, ?, ?)
+        ''', (user_id, pet_id, daily_food))
+        
+        conn.commit()
+        
+        # Формируем красивый ответ
+        response = f"""
+✅ **ПИТОМЕЦ УСПЕШНО ДОБАВЛЕН!** 🎉
+
+📋 **Карточка питомца:**
+────────────────
+🐾 **Кличка:** {pet_name}
+🐕 **Вид:** {species}
+🎖️ **Порода:** {breed}
+👫 **Пол:** {gender}
+🎨 **Окрас:** {color}
+📅 **Возраст:** {age} лет
+⚖️ **Вес:** {weight} кг
+📏 **Рост:** {height} см
+🎂 **День рождения:** {birthday}
+🏃 **Активность:** {activity}
+────────────────
+🍽️ **Рекомендуемая норма корма:** {daily_food} г/день
+
+🔍 Что дальше?
+• Добавьте прививки через /vaccines
+• Посмотрите всех питомцев через /pets
 """
-    await update.message.reply_text(help_text)
+        
+        keyboard = [[KeyboardButton("🐕 Мои питомцы"), KeyboardButton("🔙 Назад")]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        
+        await update.message.reply_text(response, reply_markup=reply_markup)
+        
+        # Очищаем данные
+        context.user_data.clear()
 
 # ========== МОИ ПИТОМЦЫ ==========
 
@@ -189,89 +353,66 @@ async def show_pets(update: Update, context: CallbackContext) -> None:
     pets = cursor.fetchall()
     
     if not pets:
-        await update.message.reply_text("🐾 У вас еще нет питомцев. Добавьте через /addpet")
+        await update.message.reply_text(
+            "🐾 У вас еще нет питомцев.\n"
+            "Нажмите ➕ Добавить питомца чтобы создать первую карточку!"
+        )
         return
     
     response = "📋 **ВАШИ ПИТОМЦЫ:**\n\n"
+    
     for i, pet in enumerate(pets, 1):
         response += f"{i}. **{pet[2]}** ({pet[3]})\n"
         response += f"   🎖️ Порода: {pet[4]}\n"
         response += f"   👫 Пол: {pet[10]}\n"
         response += f"   📅 Возраст: {pet[6]} лет\n"
-        response += f"   ⚖️ Вес: {pet[7]} кг\n\n"
+        response += f"   ⚖️ Вес: {pet[7]} кг\n"
+        response += "────────────────\n"
+    
+    keyboard = [[KeyboardButton("➕ Добавить питомца"), KeyboardButton("🔙 Назад")]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
+    await update.message.reply_text(response, reply_markup=reply_markup)
+
+# ========== ПРИВИВКИ ==========
+
+async def vaccines_menu(update: Update, context: CallbackContext) -> None:
+    user_id = update.effective_user.id
+    
+    cursor.execute('SELECT id, pet_name FROM pets WHERE user_id = ?', (user_id,))
+    pets = cursor.fetchall()
+    
+    if not pets:
+        await update.message.reply_text("🐾 Сначала добавьте питомца через /addpet")
+        return
+    
+    response = "💉 **ПРИВИВКИ**\n\n"
+    
+    for pet_id, pet_name in pets:
+        cursor.execute('''
+        SELECT vaccine_name, vaccine_date, next_date 
+        FROM vaccinations 
+        WHERE user_id = ? AND pet_id = ?
+        ORDER BY next_date
+        ''', (user_id, pet_id))
+        
+        vaccines = cursor.fetchall()
+        if vaccines:
+            response += f"🐕 **{pet_name}:**\n"
+            for name, date, next_date in vaccines:
+                try:
+                    next_date_obj = datetime.strptime(next_date, '%Y-%m-%d').date()
+                    status = "✅" if next_date_obj >= datetime.now().date() else "⚠️"
+                    response += f"{status} {name}\n   📅 {date} → {next_date}\n"
+                except:
+                    response += f"📌 {name}\n   📅 {date} → {next_date}\n"
+        else:
+            response += f"🐕 **{pet_name}:** нет записей\n"
+        response += "\n"
+    
+    response += "\n➕ Чтобы добавить прививку, используйте /addvaccine"
     
     await update.message.reply_text(response)
-
-# ========== ДОБАВИТЬ ПИТОМЦА ==========
-
-async def add_pet_start(update: Update, context: CallbackContext) -> None:
-    await update.message.reply_text(
-        "📝 **Добавление питомца**\n\n"
-        "Введите данные в формате:\n"
-        "`Имя;Вид;Порода;Пол;Окрас;Возраст;Вес;Рост;ДД.ММ.ГГГГ;Активность`\n\n"
-        "📌 **Пример:**\n"
-        "`Барсик;Кошка;Британская;Кот;Серый;3;4.5;25;15.05.2020;Нормальная`\n\n"
-        "Активность: низкая, нормальная, высокая, очень высокая"
-    )
-    context.user_data['awaiting_pet_data'] = True
-
-async def add_pet_process(update: Update, context: CallbackContext) -> None:
-    if not context.user_data.get('awaiting_pet_data'):
-        return
-    
-    data_text = update.message.text.strip()
-    parts = data_text.split(';')
-    
-    if len(parts) != 10:
-        await update.message.reply_text("❌ Нужно 10 параметров через ';'")
-        return
-    
-    try:
-        pet_name = parts[0].strip()
-        species = parts[1].strip()
-        breed = parts[2].strip()
-        gender = parts[3].strip()
-        color = parts[4].strip()
-        age = int(parts[5].strip())
-        weight = float(parts[6].strip())
-        height = float(parts[7].strip())
-        birthday = parts[8].strip()
-        activity = parts[9].strip()
-        
-        cursor.execute('''
-        INSERT INTO pets (user_id, pet_name, species, breed, gender, color, age, weight, height, birthday, activity_level)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (update.effective_user.id, pet_name, species, breed, gender, color, age, weight, height, birthday, activity))
-        
-        pet_id = cursor.lastrowid
-        daily_food = calculate_daily_food(weight, age, species, breed, gender, activity)
-        
-        cursor.execute('''
-        INSERT INTO feeding (user_id, pet_id, daily_amount)
-        VALUES (?, ?, ?)
-        ''', (update.effective_user.id, pet_id, daily_food))
-        
-        conn.commit()
-        
-        response = f"""
-✅ **Питомец добавлен!**
-
-🐾 {pet_name} ({species})
-👫 Пол: {gender}
-🎖️ Порода: {breed}
-🎨 Окрас: {color}
-📅 Возраст: {age} лет
-⚖️ Вес: {weight} кг
-📏 Рост: {height} см
-
-🍽️ **Дневная норма:** {daily_food} г
-"""
-        await update.message.reply_text(response)
-        
-    except Exception as e:
-        await update.message.reply_text(f"❌ Ошибка: {e}")
-    
-    context.user_data['awaiting_pet_data'] = False
 
 # ========== ПИТАНИЕ ==========
 
@@ -288,10 +429,11 @@ async def food_menu(update: Update, context: CallbackContext) -> None:
     pets = cursor.fetchall()
     
     if not pets:
-        await update.message.reply_text("🐾 Сначала добавьте питомца!")
+        await update.message.reply_text("🐾 Сначала добавьте питомца через /addpet")
         return
     
     response = "🍽️ **ПИТАНИЕ ПИТОМЦЕВ**\n\n"
+    
     for pet in pets:
         name, weight, age, species, breed, gender, activity, amount = pet
         if not amount:
@@ -299,39 +441,7 @@ async def food_menu(update: Update, context: CallbackContext) -> None:
         
         response += f"🐕 **{name}**\n"
         response += f"   ⚖️ Вес: {weight} кг\n"
-        response += f"   🍽️ Норма: {amount} г/день\n\n"
-    
-    await update.message.reply_text(response)
-
-# ========== ПРИВИВКИ ==========
-
-async def vaccines_menu(update: Update, context: CallbackContext) -> None:
-    user_id = update.effective_user.id
-    
-    cursor.execute('SELECT id, pet_name FROM pets WHERE user_id = ?', (user_id,))
-    pets = cursor.fetchall()
-    
-    if not pets:
-        await update.message.reply_text("🐾 Сначала добавьте питомца!")
-        return
-    
-    response = "💉 **ПРИВИВКИ**\n\n"
-    for pet_id, pet_name in pets:
-        cursor.execute('''
-        SELECT vaccine_name, vaccine_date, next_date 
-        FROM vaccinations 
-        WHERE user_id = ? AND pet_id = ?
-        ORDER BY next_date
-        ''', (user_id, pet_id))
-        
-        vaccines = cursor.fetchall()
-        if vaccines:
-            response += f"🐕 **{pet_name}:**\n"
-            for name, date, next_date in vaccines:
-                status = "✅" if datetime.strptime(next_date, '%Y-%m-%d').date() >= datetime.now().date() else "⚠️"
-                response += f"{status} {name}\n   📅 {date} → {next_date}\n"
-        else:
-            response += f"🐕 **{pet_name}:** нет записей\n"
+        response += f"   🍽️ Дневная норма: {amount} г\n\n"
     
     await update.message.reply_text(response)
 
@@ -348,11 +458,9 @@ async def handle_buttons(update: Update, context: CallbackContext) -> None:
         await vaccines_menu(update, context)
     elif text == "🍽️ Питание":
         await food_menu(update, context)
-    elif text == "❓ Помощь":
-        await help_command(update, context)
-    elif text == "🔙 Назад" or text == "/start":
+    elif text == "🔙 Назад":
         await main_menu(update, context)
-    elif context.user_data.get('awaiting_pet_data'):
+    elif context.user_data.get('pet_step') is not None:
         await add_pet_process(update, context)
     else:
         await main_menu(update, context)
@@ -364,18 +472,20 @@ def main() -> None:
         application = Application.builder().token(TOKEN).build()
         
         application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("help", help_command))
         application.add_handler(CommandHandler("pets", show_pets))
         application.add_handler(CommandHandler("addpet", add_pet_start))
-        application.add_handler(CommandHandler("food", food_menu))
         application.add_handler(CommandHandler("vaccines", vaccines_menu))
+        application.add_handler(CommandHandler("food", food_menu))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
         
         print("✅ Бот запущен и готов!")
+        print("📝 Режим добавления: пошаговый ввод")
         application.run_polling()
         
     except Exception as e:
         print(f"❌ ОШИБКА: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == '__main__':
     main()
