@@ -8,7 +8,7 @@ print("=" * 50)
 print("🚀 PetGav Bot запускается...")
 print("=" * 50)
 
-TOKEN = os.environ.get('TELEGRAM_TOKEN')
+TOKEN = os.environ.get('8546883583:AAGME9e2s3FGGT91G3SNRt1ewYC1DYzaoaQ')
 if not TOKEN:
     print("❌ ОШИБКА: TELEGRAM_TOKEN не найден!")
     exit(1)
